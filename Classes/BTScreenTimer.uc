@@ -28,23 +28,17 @@ var() Color InfoColor;
 var() int InfoY;
 var() int InfoX;
 
-var bool bInitialized;
 
 var PlayerPawn PlayerLocal;
-var BTScreenPRI BT_PRI_Local;
+var BTScreenMutator Controller;
 
 var float cStamp;
 var int oldUpdate;
 
-var int LastTime;
 
-function PreBeginPlay() {
-	if( bInitialized )
-		return;
-
-	bInitialized = True;
-
-	Spawn(class'BTScreen');
+replication {
+	reliable if ( Role == ROLE_Authority )
+		Controller;
 }
 
 // ============================================================================
@@ -57,15 +51,13 @@ function PreBeginPlay() {
 // ============================================================================
 
 simulated function Prepare(ScriptedTexture TextureCanvas) {
+	local Info temp;
+
   	if(	PlayerLocal == None )
 	    foreach AllActors(class 'PlayerPawn', PlayerLocal)
-	      	if( Viewport(PlayerLocal.Player) != None )
-	        	break;
-
-
-	BT_PRI_Local = GetBTPRI(PlayerLocal);
+	      	if( PlayerLocal != None && Viewport(PlayerLocal.Player) != None )
+	        	break;	
 }
-
 
 // ============================================================================
 // Draw
@@ -75,7 +67,7 @@ simulated function Draw(ScriptedTexture TextureCanvas, int Left, int Top, float 
   	local string TextCaption, TextInfo;
   	local Color ColorCaption;
 
-	local int Time;
+	local int Time, runTime;
 	local String T;
 
   	local float HeightTextCaption;
@@ -83,83 +75,77 @@ simulated function Draw(ScriptedTexture TextureCanvas, int Left, int Top, float 
   	local float WidthText;
 
   	local PlayerPawn PlayerP;
-  	local BTScreenPRI BT_PRI;
 
-  	if( PlayerLocal.PlayerReplicationInfo.bIsSpectator ) return;
+  	if( Controller == None ) return; //No controller found
+  	if( PlayerLocal == None ) return; //No local player found
+  	if( PlayerLocal.PlayerReplicationInfo == None ) return;
+  	if( PlayerLocal.PlayerReplicationInfo.bIsSpectator ) return; //Don't allow spectators
 
-  	if( PlayerLocal.ViewTarget != None && PlayerLocal.ViewTarget.IsA('PlayerPawn') ){
+  	if( PlayerLocal.ViewTarget != None && PlayerLocal.ViewTarget.IsA('PlayerPawn') ) 
   		PlayerP = PlayerPawn(PlayerLocal.ViewTarget);
-  		BT_PRI = GetBTPRI(PlayerP);
-  	}else{
+  	else
   		PlayerP = PlayerLocal;
-  		BT_PRI = BT_PRI_Local;
-  	}
 
-  	if( PlayerP != None && BT_PRI != None ){
-		//see if server sent a new runtime
-		if( oldUpdate != BT_PRI.runTime ){
-			oldUpdate = BT_PRI.runTime;
+
+  	//TIMER VARIABLE INITIAL
+	  	runTime = Controller.GetRunTimeByPlayerID(PlayerP.PlayerReplicationInfo.PlayerID);
+		  
+
+		if( oldUpdate != runTime ){
+			oldUpdate = runTime;
 			cStamp = Level.TimeSeconds;
 		}
 
-		if( PlayerP.PlayerReplicationInfo.bWaitingPlayer ){
-			oldUpdate = 0; //game has not started yet
-			Time = 0;
-			LastTime = Time;
-		}else if( !PlayerP.IsInState('GameEnded') && !BT_PRI.bNeedsRespawn ) { //update HUD-Timer if the Game is not ended and the player is on a run
-			//round down
-			//Time = BT_PRI.runTime/10;
-			//this is about the current time: runs on until server saw a cap; this may cause the timer to jump back a bit
+		Time = oldUpdate;
 
-			Time = (oldUpdate + int((Level.TimeSeconds - cStamp) * 90.9090909))/10;//move on from last update until server sends a new one
-			LastTime = Time;
-		}else{
-			oldUpdate = 0; //dead or game over
-			Time = 0;
-			LastTime = Time;
-		}
+		if( Time != 0 )
+			Time = (oldUpdate + int((Level.TimeSeconds - cStamp) * 90.9090909))/10;
 
 		//Current run time
 		T = GetFormattedTime(Time / 600, Time % 600);
+	//
 
-	  	//Get color of current player team
-	    ColorCaption = CaptionColor;
-	    if( CaptionColorTeam ){
-	      	switch (PlayerP.PlayerReplicationInfo.Team) {
-		        case 0: ColorCaption.R = 255; ColorCaption.G =   0; ColorCaption.B =   0; break;
+
+	//CAPTION SETTINGS
+		ColorCaption = CaptionColor;
+		if( CaptionColorTeam ){
+			switch (PlayerP.PlayerReplicationInfo.Team) {
+				case 0: ColorCaption.R = 255; ColorCaption.G =   0; ColorCaption.B =   0; break;
 	        	case 1: ColorCaption.R =   0; ColorCaption.G =   0; ColorCaption.B = 255; break;
 	        	case 2: ColorCaption.R =   0; ColorCaption.G = 255; ColorCaption.B =   0; break;
-	        	case 3: ColorCaption.R = 255; ColorCaption.G = 255; ColorCaption.B =   0; break;
-	        }
-	    }
+		        case 3: ColorCaption.R = 255; ColorCaption.G = 255; ColorCaption.B =   0; break;
+	    	}
+		}
 
-	    //Get font sizes for the given font
-	  	TextureCanvas.TextSize("X", WidthText, HeightTextCaption, CaptionFont);
-	  	TextureCanvas.TextSize("X", WidthText, HeightTextInfo, InfoFont);
+		TextCaption = Caption;
+		TextCaption = Replace(TextCaption, "%p", PlayerP.PlayerReplicationInfo.PlayerName);
 
-
-	    TextCaption = Caption;
-	    TextCaption = Replace(TextCaption, "%p", PlayerP.PlayerReplicationInfo.PlayerName);
-
-	   	if( CaptionCaps )
-	      	TextCaption = Caps(TextCaption);
-
-	    TextInfo = Info;
-	    TextInfo = Replace(TextInfo, "%t", T);
-
-	    if( InfoCaps )
-	      	TextInfo = Caps(TextInfo);
+		if( CaptionCaps )
+			TextCaption = Caps(TextCaption);
+	//
 
 
+	//INFO SETTGINS
+		TextInfo = Info;
+		TextInfo = Replace(TextInfo, "%t", T);
 
-	    TextureCanvas.DrawColoredText(Left + CaptionX, Top + CaptionY + HeightTextCaption, TextCaption, CaptionFont, FadeColor(ColorCaption, Fade));
-	    TextureCanvas.DrawColoredText(Left + InfoX, Top + InfoY + HeightTextInfo, TextInfo, InfoFont, FadeColor(InfoColor, Fade));
-  	}
+		if( InfoCaps )
+			TextInfo = Caps(TextInfo);
+	//
+
+
+	//DRAW
+		//Get font sizes for the given font
+		TextureCanvas.TextSize("X", WidthText, HeightTextCaption, CaptionFont);
+		TextureCanvas.TextSize("X", WidthText, HeightTextInfo, InfoFont);
+
+		TextureCanvas.DrawColoredText(Left + CaptionX, Top + CaptionY + HeightTextCaption, TextCaption, CaptionFont, FadeColor(ColorCaption, Fade));
+		TextureCanvas.DrawColoredText(Left + InfoX, Top + InfoY + HeightTextInfo, TextInfo, InfoFont, FadeColor(InfoColor, Fade));
+	//
 }
 
 //==========================================================
-simulated function string GetFormattedTime(int Minutes, int Seconds)
-{
+simulated function string GetFormattedTime(int Minutes, int Seconds) {
 	local int d;
 	local String formatted;
 
@@ -171,13 +157,10 @@ simulated function string GetFormattedTime(int Minutes, int Seconds)
 	else{ 
 		//show actual timer
 
-		if ( Minutes >= 10 ){
+		if ( Minutes >= 10 )
 			formatted = formatted $ Minutes $ ":";
-		}
-		else{
-			//leading 0
+		else
 			formatted = formatted $ "0" $ Minutes $ ":";
-		}
 
 		//Seconds 1
 		d = Seconds/100;
@@ -197,21 +180,4 @@ simulated function string GetFormattedTime(int Minutes, int Seconds)
 	}
 
 	return formatted;
-}
-
-//==========================================================
-simulated function BTScreenPRI GetBTPRI(PlayerPawn P){
-	local BTScreenPRI BTPRI;
-	local PlayerReplicationInfo PRI;
-
-	if( P != None ){
-		PRI = P.PlayerReplicationInfo;
-   		foreach AllActors(class'BTScreenPRI', BTPRI)
-    		if( BTPRI.PlayerID == PRI.PlayerID ) 
-    			break;
-
-		return BTPRI;
-	}
-
-	return None;
 }

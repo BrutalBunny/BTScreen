@@ -66,7 +66,12 @@ function tick(float DeltaTime) {
 			PIS[i].bNeedsRespawn = True;
 		}
 
-		if( PIS[i].bModified ) ResetPlayer(PIS[i].PlayerID);
+		if( PIS[i].bModified ) {
+			PIS[i].bModified = false;
+			PIS[i].StartTime = Level.TimeSeconds;
+
+			if( PIS[i].bNeedsRespawn )  PIS[i].bNeedsRespawn = False;
+		}
 			
 		if( PIS[i].bNeedsRespawn )
 			PIS[i].runTime = 0;
@@ -116,30 +121,6 @@ function InitNewPlayer(PlayerPawn P) {
 
 	PIS[i].lastDeaths = P.PlayerReplicationInfo.Deaths;
 	PIS[i].lastScore  = P.PlayerReplicationInfo.Score;
-}
-
-//====================================
-// ResetPlayer
-//====================================
-function ResetPlayer(coerce int ID){
-	local int i;
-	local bool found;
-
-	for(i=0;i<32;i++){
-		if( PIS[i].PlayerID == ID ){
-			found = true;
-			break;
-		}
-	}
-
-	if( found ){
-		PIS[i].bModified = false;
-		PIS[i].StartTime = Level.TimeSeconds;
-
-		//allow grab/cap again
-		if( PIS[i].bNeedsRespawn ) 
-			PIS[i].bNeedsRespawn = False;
-	}	
 }
 
 //====================================
